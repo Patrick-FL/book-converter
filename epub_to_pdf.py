@@ -31,9 +31,20 @@ class EpubConverter:
 
             # Extract all resources and update HTML content
             images = self.extract_images(book, temp_dir)
+            
+            # Create a mapping of image filenames to their index (for numbering)
+            image_mapping = {}
+            for i, img_path in enumerate(images, start=1):
+                img_filename = os.path.basename(img_path)
+                image_mapping[img_filename] = i
+            
+            # Process HTML content
             for item in book.get_items():
                 if item.get_type() == ebooklib.ITEM_DOCUMENT:
-                    html_content += item.get_content().decode('utf-8')
+                    content = item.get_content().decode('utf-8')
+                    # Replace image tags with numbered references
+                    content = self.replace_image_tags_with_references(content, image_mapping)
+                    html_content += content
                 elif item.get_type() in [ebooklib.ITEM_IMAGE, ebooklib.ITEM_STYLE, ebooklib.ITEM_SCRIPT]:
                     # Save the resource to the temporary directory
                     resource_path = os.path.join(temp_dir, item.get_name())
@@ -92,6 +103,33 @@ class EpubConverter:
                     f.write(item.get_content())
                 images.append(image_path)
         return images
+
+    def replace_image_tags_with_references(self, html_content, image_mapping):
+        """
+        Replace <img> tags in HTML with numbered image references that match the image PDF.
+        """
+        import re
+        
+        # Function to replace each img tag with a numbered reference
+        def replace_img(match):
+            img_tag = match.group(0)
+            # Extract the src attribute
+            src_match = re.search(r'src=[\'"](.*?)[\'"]', img_tag)
+            if src_match:
+                src = src_match.group(1)
+                # Get just the filename from the path
+                img_filename = os.path.basename(src)
+                # Find the image number in our mapping
+                if img_filename in image_mapping:
+                    img_number = image_mapping[img_filename]
+                    # Return a styled image reference
+                    return f'<div style="text-align: center; margin: 20px 0; font-weight: bold; font-size: 14px; color: #333; padding: 10px; border: 1px solid #ccc; background-color: #f9f9f9;">[Bild {img_number} - Siehe Bildanhang]</div>'
+            # If we couldn't process the image, return the original tag
+            return img_tag
+        
+        # Find and replace all img tags in the HTML
+        result = re.sub(r'<img\s+[^>]+>', replace_img, html_content)
+        return result
 
     def create_images_pdf(self, images, output_path):
         pdf = FPDF()
